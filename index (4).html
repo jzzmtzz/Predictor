@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Match Predictor</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&display=swap">
+<style>
+:root{--bg:#F2F5F0;--surf:#fff;--ink:#0E1B2C;--mute:#5B6B7B;--line:#D9E0D8;--turf:#1F7A4D;--turf-ink:#fff;--card:#F5C518;--card-ink:#0E1B2C;--bad:#B3261E;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0B1420;--surf:#132235;--ink:#EAF1EA;--mute:#93A4B5;--line:#223650;--turf:#3FBF82;--turf-ink:#06210F;--bad:#FF8A80;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0B1420;--surf:#132235;--ink:#EAF1EA;--mute:#93A4B5;--line:#223650;--turf:#3FBF82;--turf-ink:#06210F;--bad:#FF8A80;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Bricolage Grotesque",system-ui,sans-serif;display:flex;justify-content:center}
+#app{width:100%;max-width:440px;min-height:100vh;padding:20px 16px 60px}
+h1,h2{margin:0;font-weight:800;letter-spacing:-.02em}
+h1{font-size:30px}h2{font-size:20px;margin:22px 0 10px}
+.muted{color:var(--mute);font-size:14px}
+.panel{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:12px 14px;background:var(--turf);color:var(--turf-ink);cursor:pointer}
+button.full{width:100%}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:3px solid var(--card);outline-offset:2px}
+input[type=text]{width:100%;font:inherit;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+input[type=checkbox]{width:22px;height:22px;flex:none}
+label{display:flex;gap:10px;align-items:flex-start;margin:12px 0}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.sel{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.sel button{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.sel button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.sel button.right{background:var(--turf);color:var(--turf-ink);border-color:var(--turf)}
+.sel button.wrong{border-color:var(--bad);color:var(--bad)}
+.sel button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px}
+.sel .lbl{font-size:12px;font-weight:500;color:var(--mute)}
+.sel button.on .lbl,.sel button.right .lbl{color:inherit;opacity:.8}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--card);color:var(--card-ink)}
+.tag.ok{background:var(--turf);color:var(--turf-ink)}
+.prize{background:var(--card);color:var(--card-ink);border-radius:14px;padding:14px;margin:14px 0}
+.prize b{font-size:18px}
+.bar{height:6px;background:var(--line);border-radius:9px;overflow:hidden;margin:6px 0 14px}
+.bar i{display:block;height:100%;background:var(--turf)}
+.lb{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.lb.me{font-weight:800}
+.err{color:var(--bad);font-size:14px;margin-top:6px}
+.dev{margin-top:26px;border:1px dashed var(--line);border-radius:14px;padding:12px}
+a{color:var(--turf)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const API_URL='https://snsfehdoitghzeogwelr.supabase.co/functions/v1/api';
+const API_KEY='sb_publishable_uoekkbHxTMS_vNSL7uq6FQ_EkP1f_PG'; // starts with sb_publishable_ (safe to be public; never use the secret key)
+const TG=window.Telegram&&Telegram.WebApp;if(TG){TG.ready();TG.expand()}
+const INIT=TG?TG.initData:'';
+const OPT=[['1','Home win'],['X','Draw'],['2','Away win']];
+const S={round:null,fix:[],picks:{},entry:null,lb:[],me:''};
+let err='',agreed=false,busy=false;
+const app=document.querySelector('#app');
+const fmt=t=>new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Lisbon',weekday:'short',hour:'2-digit',minute:'2-digit'}).format(t);
+const lock=()=>Math.min(...S.fix.map(f=>f.ko));
+const open=()=>S.round&&S.round.status==='open'&&Date.now()<lock();
+async function call(action,extra={}){
+ try{const r=await fetch(API_URL,{method:'POST',headers:{'content-type':'application/json','apikey':API_KEY},body:JSON.stringify({action,initData:INIT,...extra})});
+  let j;try{j=await r.json()}catch(_){j={}}
+  if(!r.ok&&!j.error)j.error='Server error '+r.status+': '+String(j.message||j.code||j.msg||JSON.stringify(j)).slice(0,200);return j}
+ catch(e){return{error:'Could not reach the server. Check your connection.'}}}
+async function load(){const j=await call('state');if(j.error){err=j.error;return false}
+ S.round=j.round;S.me=j.me;S.fix=(j.fixtures||[]).map(f=>({...f,ko:Date.parse(f.kickoff_at)}));
+ S.entry=j.entry;S.lb=j.leaderboard||[];S.picks=j.entry?j.entry.picks:S.picks;return true}
+const shell=h=>app.innerHTML=`<h1>Match Predictor</h1><div class="panel" style="margin-top:14px">${h}</div>`;
+async function boot(){
+ if(!INIT)return shell('Open this from Telegram to play.');
+ app.innerHTML='<p class="muted">Loading…</p>';
+ if(!(await load())){shell(`${err}<br><br><button id="r">Try again</button>`);return document.querySelector('#r').onclick=boot}
+ render()}
+function render(){
+ if(!S.round)return shell('No round is open yet. Check back soon.');
+ (S.entry||agreed)?round():gate()}
+function gate(){
+ app.innerHTML=`<h1>${S.round.title}</h1><p class="muted">Predict ${S.fix.length} matches. Top ${S.round.winners} scores win ${S.round.prize.toLowerCase()}.</p>
+ <div class="panel"><label><input type="checkbox" id="c"><span>I am 18 or older, located in Portugal, and accept the terms and privacy notice.</span></label>
+ <button class="full" id="go" disabled>Start predicting</button></div><p class="muted">Free to play. No deposits, no cash-out.</p>`;
+ const c=document.querySelector('#c'),g=document.querySelector('#go');
+ c.onchange=()=>g.disabled=!c.checked;g.onclick=()=>{agreed=true;render()}}
+function round(){
+ const done=!!S.entry,n=S.fix.filter(f=>S.picks[f.id]).length,tot=S.fix.length,can=!done&&open();
+ const cards=S.fix.map(f=>`<div class="panel"><div class="muted">${f.league||''}</div><div class="row" style="margin-top:4px"><div><b>${f.home}</b><br><b>${f.away}</b></div><span class="tag">${fmt(f.ko)}</span></div>
+ <div class="sel">${OPT.map(([k])=>{let c=S.picks[f.id]===k?'on':'';if(f.result&&c)c=f.result===k?'right':'wrong';
+  return`<button data-f="${f.id}" data-k="${k}" class="${c}" ${can?'':'disabled'}><span class="lbl">${k==='X'?'draw':k}</span><b>${Number(f.odds[k]).toFixed(2)}</b></button>`}).join('')}</div>
+ ${f.result?`<div class="muted" style="margin-top:8px">Final: ${OPT.find(o=>o[0]===f.result)[1]}</div>`:''}</div>`).join('');
+ const settled=S.round.status==='settled';
+ app.innerHTML=`<div class="row"><h1>${S.round.title}</h1><span class="tag ok">${S.me}</span></div>
+ <div class="prize"><b>Top ${S.round.winners} win ${S.round.prize.toLowerCase()}</b><div>1 point per correct result (1 = home win, 2 = away win). Odds are shown for reference and don't change scoring. Ties go to the earlier entry.</div></div>
+ ${done?`<div class="panel"><b>Your picks are locked in.</b><div class="muted">${settled?'Results are in. See the leaderboard below.':'The leaderboard appears once the results are in.'}</div></div>`
+  :can?`<div class="muted">${n} of ${tot} picked · round closes ${fmt(lock())}</div><div class="bar"><i style="width:${n/tot*100}%"></i></div>`
+  :`<div class="panel"><b>This round is closed.</b></div>`}
+ ${cards}
+ ${can?`<button class="full" id="sub" ${n<tot?'disabled':''}>Submit ${tot} predictions</button><div class="err">${err}</div>`:''}
+ ${board(settled)}`;
+ app.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{S.picks[b.dataset.f]=b.dataset.k;err='';round()});
+ const s=document.querySelector('#sub');
+ if(s)s.onclick=async()=>{if(busy)return;busy=true;s.disabled=true;
+  const j=await call('submit',{round_id:S.round.id,picks:S.picks,consent:true});busy=false;
+  err=j.ok?'':(j.error||'Could not submit');if(j.ok)await load();round()}}
+function board(settled){
+ if(!settled)return'';
+ return`<h2>Leaderboard</h2><div class="panel">`+(S.lb.length?S.lb.map(p=>`<div class="lb ${p.is_me?'me':''}"><span>${p.pos}. ${p.name} ${p.pos<=S.round.winners?`<span class="tag ok">${S.round.prize}</span>`:''}</span><span>${p.score}/${S.fix.length}</span></div>`).join(''):'<div class="muted">No entries.</div>')+`</div>`}
+boot();
+</script>
+</body>
+</html>
