@@ -66,7 +66,7 @@ const open=()=>S.round&&S.round.status==='open'&&Date.now()<lock();
 async function call(action,extra={}){
  try{const r=await fetch(API_URL,{method:'POST',headers:{'content-type':'application/json','apikey':API_KEY},body:JSON.stringify({action,initData:INIT,...extra})});
   let j;try{j=await r.json()}catch(_){j={}}
-  if(!r.ok&&!j.error)j.error='Server error '+r.status+': '+String(j.message||j.code||j.msg||JSON.stringify(j)).slice(0,200);return j}
+  if(!r.ok&&!j.error)j.error='Server error '+r.status+' '+JSON.stringify(j).slice(0,200)+r.status+': '+String(j.message||j.code||j.msg||JSON.stringify(j)).slice(0,200);return j}
  catch(e){return{error:'Could not reach the server. Check your connection.'}}}
 async function load(){const j=await call('state');if(j.error){err=j.error;return false}
  S.round=j.round;S.me=j.me;S.fix=(j.fixtures||[]).map(f=>({...f,ko:Date.parse(f.kickoff_at)}));
