@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Match Predictor</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&display=swap">
+<style>
+:root{--bg:#F2F5F0;--surf:#fff;--ink:#0E1B2C;--mute:#5B6B7B;--line:#D9E0D8;--turf:#1F7A4D;--turf-ink:#fff;--card:#F5C518;--card-ink:#0E1B2C;--bad:#B3261E;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0B1420;--surf:#132235;--ink:#EAF1EA;--mute:#93A4B5;--line:#223650;--turf:#3FBF82;--turf-ink:#06210F;--bad:#FF8A80;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0B1420;--surf:#132235;--ink:#EAF1EA;--mute:#93A4B5;--line:#223650;--turf:#3FBF82;--turf-ink:#06210F;--bad:#FF8A80;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Bricolage Grotesque",system-ui,sans-serif;display:flex;justify-content:center}
+#app{width:100%;max-width:440px;min-height:100vh;padding:20px 16px 60px}
+h1,h2{margin:0;font-weight:800;letter-spacing:-.02em}
+h1{font-size:30px}h2{font-size:20px;margin:22px 0 10px}
+.muted{color:var(--mute);font-size:14px}
+.panel{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:12px 14px;background:var(--turf);color:var(--turf-ink);cursor:pointer}
+button.full{width:100%}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:3px solid var(--card);outline-offset:2px}
+input[type=text]{width:100%;font:inherit;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+input[type=checkbox]{width:22px;height:22px;flex:none}
+label{display:flex;gap:10px;align-items:flex-start;margin:12px 0}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.sel{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.sel button{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.sel button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.sel button.right{background:var(--turf);color:var(--turf-ink);border-color:var(--turf)}
+.sel button.wrong{border-color:var(--bad);color:var(--bad)}
+.sel button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px}
+.sel .lbl{font-size:12px;font-weight:500;color:var(--mute)}
+.sel button.on .lbl,.sel button.right .lbl{color:inherit;opacity:.8}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--card);color:var(--card-ink)}
+.tag.ok{background:var(--turf);color:var(--turf-ink)}
+.prize{background:var(--card);color:var(--card-ink);border-radius:14px;padding:14px;margin:14px 0}
+.prize b{font-size:18px}
+.bar{height:6px;background:var(--line);border-radius:9px;overflow:hidden;margin:6px 0 14px}
+.bar i{display:block;height:100%;background:var(--turf)}
+.lb{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.lb.me{font-weight:800}
+.err{color:var(--bad);font-size:14px;margin-top:6px}
+.dev{margin-top:26px;border:1px dashed var(--line);border-radius:14px;padding:12px}
+a{color:var(--turf)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ---------- Config (admin-editable in the real build) ---------- */
+const CFG={title:'Weekend Predictor',prize:'Free spins',winners:3};
+const H=3600e3,now=Date.now();
+const FIX=[
+ {id:1,lg:'India · I-League',home:'Dempo SC',away:'Shillong Lajong FC',ko:now+2*H,odds:{'1':3.15,'X':3.55,'2':2.0}},
+ {id:2,lg:'Uruguay · Primera Division',home:'CA Progreso',away:'Montevideo City Torque',ko:now+9*H,odds:{'1':5.6,'X':4.2,'2':1.49}},
+ {id:3,lg:'Brazil · Brasileiro Serie A',home:'CR Vasco da Gama RJ',away:'SC Internacional RS',ko:now+12*H,odds:{'1':1.56,'X':4.3,'2':5.4}},
+ {id:4,lg:'USA · MLS',home:'Seattle Sounders',away:'Real Salt Lake',ko:now+17*H,odds:{'1':1.9,'X':3.85,'2':3.6}},
+ {id:5,lg:'USA · MLS',home:'Orlando City SC',away:'FC Cincinnati',ko:now+19*H,odds:{'1':2.4,'X':3.85,'2':2.6}}];
+const OPT=[['1','Home win'],['X','Draw'],['2','Away win']];
+/* ---------- Mock server state (stands in for Postgres + API) ---------- */
+const S={handle:null,picks:{},submittedAt:null,results:null,
+ seeds:[['@marco_pt','1','X','1','2','1',1],['@ana_goals','1','1','2','X','1',2],['@rui88','X','2','1','1','2',3],['@sofia_fc','1','X','X','2','1',4],['@lisbon_leo','2','1','1','1','X',5],['@carla_k','1','1','1','2','2',6]]
+ .map(a=>({handle:a[0],picks:{1:a[1],2:a[2],3:a[3],4:a[4],5:a[5]},at:a[6]}))};
+const lock=()=>Math.min(...FIX.map(f=>f.ko));
+const open=()=>Date.now()<lock();
+const fmt=t=>new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Lisbon',weekday:'short',hour:'2-digit',minute:'2-digit'}).format(t);
+const score=p=>S.results?FIX.filter(f=>p[f.id]===S.results[f.id]).length:0;
+function ranking(){const all=S.seeds.concat(S.submittedAt?[{handle:S.handle,picks:S.picks,at:S.submittedAt,me:true}]:[]);
+ return all.map(p=>({...p,s:score(p.picks)})).sort((a,b)=>b.s-a.s||a.at-b.at)}
+const API={
+ join(raw){const h=raw.trim().replace(/^@/,'');
+  if(!/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(h))return{ok:false,error:'Enter a valid Telegram username: 5–32 letters, numbers or underscores.'};
+  if(S.seeds.some(p=>p.handle.toLowerCase()==='@'+h.toLowerCase()))return{ok:false,error:'This username already entered this round.'};
+  S.handle='@'+h;return{ok:true}},
+ submit(){if(!open())return{ok:false,error:'Round closed at the first kickoff.'};
+  if(S.submittedAt)return{ok:true,duplicate:true};
+  if(FIX.some(f=>!S.picks[f.id]))return{ok:false,error:'Pick all 5 matches first.'};
+  S.submittedAt=Date.now();return{ok:true}}};
+/* ---------- UI ---------- */
+const app=document.querySelector('#app');let err='',consent=false,draft='';
+function entry(){
+ app.innerHTML=`<h1>${CFG.title}</h1><p class="muted">Predict 5 matches. Top ${CFG.winners} scores win ${CFG.prize.toLowerCase()}.</p>
+ <div class="panel"><h2 style="margin-top:0">Enter with Telegram</h2>
+ <input type="text" id="h" placeholder="@username" autocomplete="off" value="${draft}">
+ <label><input type="checkbox" id="c" ${consent?'checked':''}><span>I am 18 or older, located in Portugal, and accept the <a href="#terms">terms</a> and privacy notice.</span></label>
+ <button class="full" id="go">Start predicting</button><div class="err" id="e">${err}</div></div>
+ <p class="muted">Free to play. No odds, no deposits, no cash-out.</p>`;
+ document.querySelector('#h').oninput=e=>draft=e.target.value;
+ document.querySelector('#c').onchange=e=>consent=e.target.checked;
+ document.querySelector('#go').onclick=()=>{if(!consent){err='Confirm you are 18+ and accept the terms.';return entry()}
+  const r=API.join(draft);err=r.ok?'':r.error;r.ok?render():entry()}}
+function round(){
+ const n=FIX.filter(f=>S.picks[f.id]).length,done=!!S.submittedAt,res=S.results;
+ const cards=FIX.map(f=>`<div class="panel"><div class="muted">${f.lg}</div><div class="row" style="margin-top:4px"><div><b>${f.home}</b><br><b>${f.away}</b></div><span class="tag">${fmt(f.ko)}</span></div>
+ <div class="sel">${OPT.map(([k,l])=>{const mine=S.picks[f.id]===k;let c=mine?'on':'';
+  if(res&&mine)c=res[f.id]===k?'right':'wrong';
+  return`<button data-f="${f.id}" data-k="${k}" class="${c}" ${done||!open()?'disabled':''}><span class="lbl">${k==='X'?'draw':k}</span><b>${f.odds[k].toFixed(2)}</b></button>`}).join('')}</div>
+ ${res?`<div class="muted" style="margin-top:8px">Final: ${OPT.find(o=>o[0]===res[f.id])[1]}</div>`:''}</div>`).join('');
+ app.innerHTML=`<div class="row"><h1>${CFG.title}</h1><span class="tag ok">${S.handle}</span></div>
+ <div class="prize"><b>Top ${CFG.winners} win ${CFG.prize.toLowerCase()}</b><div>1 point per correct result (1 = home win, 2 = away win). Odds are shown for reference and don't change scoring. Ties go to the earlier entry.</div></div>
+ ${done?`<div class="panel"><b>Your picks are locked in.</b><div class="muted">${res?'Results are in. See the leaderboard below.':'Results and the leaderboard appear after the last match.'}</div></div>`
+ :`<div class="muted">${n} of 5 picked · round closes ${fmt(lock())}</div><div class="bar"><i style="width:${n*20}%"></i></div>`}
+ ${cards}
+ ${done?'':`<button class="full" id="sub" ${n<5?'disabled':''}>Submit 5 predictions</button><div class="err">${err}</div>`}
+ ${board()}
+ <div class="dev"><div class="muted" style="margin-bottom:8px">Test controls (not in the real app)</div>
+ <div class="row"><button class="ghost" id="sim" ${S.results?'disabled':''}>Simulate results</button><button class="ghost" id="rst">Start over</button></div></div>`;
+ app.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{S.picks[b.dataset.f]=b.dataset.k;err='';round()});
+ const s=document.querySelector('#sub');if(s)s.onclick=()=>{const r=API.submit();err=r.ok?'':r.error;round()};
+ document.querySelector('#sim').onclick=()=>{S.results={};FIX.forEach(f=>S.results[f.id]=['1','X','2'][Math.floor(Math.random()*3)]);round()};
+ document.querySelector('#rst').onclick=()=>{Object.assign(S,{handle:null,picks:{},submittedAt:null,results:null});draft='';consent=false;render()}}
+function board(){
+ if(!S.results)return`<h2>Leaderboard</h2><div class="panel muted">${S.seeds.length+(S.submittedAt?1:0)} players entered. Scores appear once results are in.</div>`;
+ return`<h2>Leaderboard</h2><div class="panel">`+ranking().map((p,i)=>`<div class="lb ${p.me?'me':''}"><span>${i+1}. ${p.handle} ${i<CFG.winners?`<span class="tag ok">${CFG.prize}</span>`:''}</span><span>${p.s}/5</span></div>`).join('')+`</div>`}
+function render(){S.handle?round():entry()}
+const TG=window.Telegram&&Telegram.WebApp;
+if(TG){TG.ready();TG.expand();const u=TG.initDataUnsafe&&TG.initDataUnsafe.user;if(u&&u.username)draft='@'+u.username;}
+render();
+</script>
+</body>
+</html>
