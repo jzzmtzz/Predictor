@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -16,17 +17,15 @@ html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Bricolage Grotesque",system-ui,sans-serif;display:flex;justify-content:center}
 #app{width:100%;max-width:440px;min-height:100vh;padding:20px 16px 60px}
 h1,h2{margin:0;font-weight:800;letter-spacing:-.02em}
-h1{font-size:30px}h2{font-size:20px;margin:22px 0 10px}
+h1{font-size:30px}
+h2{font-size:20px;margin:22px 0 10px}
 .muted{color:var(--mute);font-size:14px}
 .panel{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
 button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:12px 14px;background:var(--turf);color:var(--turf-ink);cursor:pointer}
 button.full{width:100%}
 button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
 button:disabled{opacity:.45;cursor:not-allowed}
-button:focus-visible,input:focus-visible{outline:3px solid var(--card);outline-offset:2px}
-input[type=text]{width:100%;font:inherit;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
-input[type=checkbox]{width:22px;height:22px;flex:none}
-label{display:flex;gap:10px;align-items:flex-start;margin:12px 0}
+button:focus-visible{outline:3px solid var(--card);outline-offset:2px}
 .row{display:flex;gap:8px;align-items:center;justify-content:space-between}
 .sel{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
 .sel button{background:transparent;color:var(--ink);border:1px solid var(--line)}
@@ -50,71 +49,415 @@ a{color:var(--turf)}
 </style>
 </head>
 <body>
+
 <div id="app"></div>
+
 <script>
 const API_URL='https://snsfehdoitghzeogwelr.supabase.co/functions/v1/api';
-const API_KEY='sb_publishable_uoekkbHxTMS_vNSL7uq6FQ_EkP1f_PG'; // starts with sb_publishable_ (safe to be public; never use the secret key)
-const TG=window.Telegram&&Telegram.WebApp;if(TG){TG.ready();TG.expand()}
+const API_KEY='sb_publishable_uoekkbHxTMS_vNSL7uq6FQ_EkP1f_PG';
+
+const TG=window.Telegram&&Telegram.WebApp;
+
+if(TG){
+ TG.ready();
+ TG.expand();
+}
+
 const INIT=TG?TG.initData:'';
-const OPT=[['1','Home win'],['X','Draw'],['2','Away win']];
-const S={round:null,fix:[],picks:{},entry:null,lb:[],me:''};
-let err='',agreed=localStorage.getItem('ageConsentPL')==='true',busy=false;
+
+const OPT=[
+ ['1','Home win'],
+ ['X','Draw'],
+ ['2','Away win']
+];
+
+const S={
+ round:null,
+ fix:[],
+ picks:{},
+ entry:null,
+ lb:[],
+ me:''
+};
+
+let err='',busy=false;
+
 const app=document.querySelector('#app');
-const fmt=t=>new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Lisbon',weekday:'short',hour:'2-digit',minute:'2-digit'}).format(t);
+
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({
+ '&':'&amp;',
+ '<':'&lt;',
+ '>':'&gt;',
+ '"':'&quot;',
+ "'":'&#39;'
+}[c]));
+
+const fmt=t=>new Intl.DateTimeFormat('en-GB',{
+ timeZone:'Europe/Warsaw',
+ weekday:'short',
+ hour:'2-digit',
+ minute:'2-digit'
+}).format(t);
+
 const lock=()=>Math.min(...S.fix.map(f=>f.ko));
-const open=()=>S.round&&S.round.status==='open'&&Date.now()<lock();
+
+const open=()=>S.round
+ &&S.fix.length>0
+ &&S.round.status==='open'
+ &&Date.now()<lock();
+
 async function call(action,extra={}){
- try{const r=await fetch(API_URL,{method:'POST',headers:{'content-type':'application/json','apikey':API_KEY},body:JSON.stringify({action,initData:INIT,...extra})});
-  let j;try{j=await r.json()}catch(_){j={}}
-  if(!r.ok&&!j.error)j.error='Server error '+r.status+' '+JSON.stringify(j).slice(0,200)+r.status+': '+String(j.message||j.code||j.msg||JSON.stringify(j)).slice(0,200);return j}
- catch(e){return{error:'Could not reach the server. Check your connection.'}}}
-async function load(){const j=await call('state');if(j.error){err=j.error;return false}
- S.round=j.round;S.me=j.me;S.fix=(j.fixtures||[]).map(f=>({...f,ko:Date.parse(f.kickoff_at)}));
- S.entry=j.entry;S.lb=j.leaderboard||[];S.picks=j.entry?j.entry.picks:S.picks;return true}
-const shell=h=>app.innerHTML=`<h1>Match Predictor</h1><div class="panel" style="margin-top:14px">${h}</div>`;
+ try{
+  const r=await fetch(API_URL,{
+   method:'POST',
+   headers:{
+    'content-type':'application/json',
+    'apikey':API_KEY
+   },
+   body:JSON.stringify({
+    action,
+    initData:INIT,
+    ...extra
+   })
+  });
+
+  let j;
+
+  try{
+   j=await r.json();
+  }catch(_){
+   j={};
+  }
+
+  if(!r.ok&&!j.error){
+   j.error='Server error '+r.status+': '+
+   String(j.message||j.code||JSON.stringify(j)).slice(0,200);
+  }
+
+  return j;
+
+ }catch(e){
+  return{
+   error:'Could not reach the server. Check your connection.'
+  };
+ }
+}
+
+async function load(){
+ const j=await call('state');
+
+ if(j.error){
+  err=j.error;
+  return false;
+ }
+
+ const previousRound=S.round?.id;
+
+ S.round=j.round;
+ S.me=j.me;
+
+ S.fix=(j.fixtures||[]).map(f=>({
+  ...f,
+  ko:Date.parse(f.kickoff_at)
+ }));
+
+ S.entry=j.entry;
+ S.lb=j.leaderboard||[];
+
+ S.picks=j.entry
+  ?j.entry.picks
+  :previousRound===S.round?.id
+   ?S.picks
+   :{};
+
+ return true;
+}
+
+const shell=h=>app.innerHTML=`
+ <h1>Match Predictor</h1>
+ <div class="panel" style="margin-top:14px">
+ ${h}
+ </div>
+`;
+
 async function boot(){
- if(!INIT)return shell('Open this from Telegram to play.');
+
+ if(!INIT){
+  return shell('Open this from Telegram to play.');
+ }
+
  app.innerHTML='<p class="muted">Loading…</p>';
- if(!(await load())){shell(`${err}<br><br><button id="r">Try again</button>`);return document.querySelector('#r').onclick=boot}
- render()}
+
+ if(!(await load())){
+  shell(`${esc(err)}<br><br>
+  <button id="r">Try again</button>`);
+
+  document.querySelector('#r').onclick=boot;
+  return;
+ }
+
+ render();
+}
+
 function render(){
- if(!S.round)return shell('No round is open yet. Check back soon.');
+
+ if(!S.round){
+  return shell('No round is open yet. Check back soon.');
+ }
+
+ if(!S.fix.length){
+  return shell('No matches available yet.');
+ }
+
  round();
 }
-function gate(){
- app.innerHTML=`<h1>${S.round.title}</h1><p class="muted">Predict ${S.fix.length} matches. Top ${S.round.winners} scores win ${S.round.prize.toLowerCase()}.</p>
- <div class="panel"><label><input type="checkbox" id="c"><span>I am 18 or older, located in Portugal, and accept the terms and privacy notice.</span></label>
- <button class="full" id="go" disabled>Start predicting</button></div><p class="muted">Free to play. No deposits, no cash-out.</p>`;
- const c=document.querySelector('#c'),g=document.querySelector('#go');
- c.onchange=()=>g.disabled=!c.checked;g.onclick=()=>{
-  localStorage.setItem('ageConsentPL','true');
-  agreed=true;
-  render()
-}}
+
 function round(){
- const done=!!S.entry,n=S.fix.filter(f=>S.picks[f.id]).length,tot=S.fix.length,can=!done&&open();
- const cards=S.fix.map(f=>`<div class="panel"><div class="muted">${f.league||''}</div><div class="row" style="margin-top:4px"><div><b>${f.home}</b><br><b>${f.away}</b></div><span class="tag">${fmt(f.ko)}</span></div>
- <div class="sel">${OPT.map(([k])=>{let c=S.picks[f.id]===k?'on':'';if(f.result&&c)c=f.result===k?'right':'wrong';
-  return`<button data-f="${f.id}" data-k="${k}" class="${c}" ${can?'':'disabled'}><span class="lbl">${k==='X'?'draw':k}</span><b>${Number(f.odds[k]).toFixed(2)}</b></button>`}).join('')}</div>
- ${f.result?`<div class="muted" style="margin-top:8px">Final: ${OPT.find(o=>o[0]===f.result)[1]}</div>`:''}</div>`).join('');
+
+ const done=!!S.entry;
+
+ const n=S.fix.filter(f=>S.picks[f.id]).length;
+
+ const tot=S.fix.length;
+
+ const can=!done&&open();
+
+ const cards=S.fix.map(f=>`
+
+ <div class="panel">
+
+  <div class="muted">${esc(f.league||'')}</div>
+
+  <div class="row" style="margin-top:4px">
+
+   <div>
+    <b>${esc(f.home)}</b><br>
+    <b>${esc(f.away)}</b>
+   </div>
+
+   <span class="tag">${fmt(f.ko)}</span>
+
+  </div>
+
+  <div class="sel">
+
+  ${OPT.map(([k])=>{
+
+   let c=S.picks[f.id]===k?'on':'';
+
+   if(f.result&&c){
+    c=f.result===k?'right':'wrong';
+   }
+
+   return`
+    <button
+     data-f="${esc(f.id)}"
+     data-k="${k}"
+     class="${c}"
+     ${can&&!busy?'':'disabled'}>
+
+     <span class="lbl">${k==='X'?'draw':k}</span>
+
+     <b>${Number(f.odds[k]).toFixed(2)}</b>
+
+    </button>
+   `;
+
+  }).join('')}
+
+  </div>
+
+  ${f.result?`
+   <div class="muted" style="margin-top:8px">
+    Final: ${esc(OPT.find(o=>o[0]===f.result)?.[1]||f.result)}
+   </div>
+  `:''}
+
+ </div>
+
+ `).join('');
+
  const settled=S.round.status==='settled';
- app.innerHTML=`<div class="row"><h1>${S.round.title}</h1><span class="tag ok">${S.me}</span></div>
- <div class="prize"><b>Top ${S.round.winners} win ${S.round.prize.toLowerCase()}</b><div>1 point per correct result (1 = home win, 2 = away win). Odds are shown for reference and don't change scoring. Ties go to the earlier entry.</div></div>
- ${done?`<div class="panel"><b>Your picks are locked in.</b><div class="muted">${settled?'Results are in. See the leaderboard below.':'The leaderboard appears once the results are in.'}</div></div>`
-  :can?`<div class="muted">${n} of ${tot} picked · round closes ${fmt(lock())}</div><div class="bar"><i style="width:${n/tot*100}%"></i></div>`
-  :`<div class="panel"><b>This round is closed.</b></div>`}
+
+ app.innerHTML=`
+
+ <div class="row">
+
+  <h1>${esc(S.round.title)}</h1>
+
+  <span class="tag ok">${esc(S.me)}</span>
+
+ </div>
+
+ <div class="prize">
+
+  <b>
+   Top ${esc(S.round.winners)} win
+   ${esc(S.round.prize.toLowerCase())}
+  </b>
+
+  <div>
+   1 point per correct result
+   (1 = home win, 2 = away win).
+   Odds are shown for reference and don't change scoring.
+   Ties go to the earlier entry.
+  </div>
+
+ </div>
+
+ ${done?`
+
+  <div class="panel">
+
+   <b>Your picks are locked in.</b>
+
+   <div class="muted">
+
+    ${settled
+     ?'Results are in. See the leaderboard below.'
+     :'The leaderboard appears once the results are in.'}
+
+   </div>
+
+  </div>
+
+ `:can?`
+
+  <div class="muted">
+
+   ${n} of ${tot} picked · round closes ${fmt(lock())}
+
+  </div>
+
+  <div class="bar">
+   <i style="width:${n/tot*100}%"></i>
+  </div>
+
+ `:`
+
+  <div class="panel">
+   <b>This round is closed.</b>
+  </div>
+
+ `}
+
  ${cards}
- ${can?`<button class="full" id="sub" ${n<tot?'disabled':''}>Submit ${tot} predictions</button><div class="err">${err}</div>`:''}
- ${board(settled)}`;
- app.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{S.picks[b.dataset.f]=b.dataset.k;err='';round()});
+
+ ${can?`
+
+  <button
+   class="full"
+   id="sub"
+   ${n<tot||busy?'disabled':''}>
+
+   ${busy?'Submitting…':`Submit ${tot} predictions`}
+
+  </button>
+
+ `:''}
+
+ <div class="err">${esc(err)}</div>
+
+ ${board(settled)}
+
+ `;
+
+ app.querySelectorAll('[data-f]').forEach(b=>{
+
+  b.onclick=()=>{
+
+   if(busy||!open()||S.entry)return;
+
+   S.picks[b.dataset.f]=b.dataset.k;
+
+   err='';
+
+   round();
+  };
+
+ });
+
  const s=document.querySelector('#sub');
- if(s)s.onclick=async()=>{if(busy)return;busy=true;s.disabled=true;
-  const j=await call('submit',{round_id:S.round.id,picks:S.picks,consent:true});busy=false;
-  err=j.ok?'':(j.error||'Could not submit');if(j.ok)await load();round()}}
+
+ if(s){
+
+  s.onclick=async()=>{
+
+   if(busy||!open()||S.entry)return;
+
+   if(S.fix.some(f=>!S.picks[f.id]))return;
+
+   busy=true;
+
+   round();
+
+   const j=await call('submit',{
+    round_id:S.round.id,
+    picks:S.picks
+   });
+
+   busy=false;
+
+   err=j.ok?'':(j.error||'Could not submit');
+
+   if(j.ok){
+    await load();
+   }
+
+   render();
+
+  };
+
+ }
+
+}
+
 function board(settled){
- if(!settled)return'';
- return`<h2>Leaderboard</h2><div class="panel">`+(S.lb.length?S.lb.map(p=>`<div class="lb ${p.is_me?'me':''}"><span>${p.pos}. ${p.name} ${p.pos<=S.round.winners?`<span class="tag ok">${S.round.prize}</span>`:''}</span><span>${p.score}/${S.fix.length}</span></div>`).join(''):'<div class="muted">No entries.</div>')+`</div>`}
+
+ if(!settled)return '';
+
+ return`
+
+ <h2>Leaderboard</h2>
+
+ <div class="panel">
+
+ ${S.lb.length?S.lb.map(p=>`
+
+  <div class="lb ${p.is_me?'me':''}">
+
+   <span>
+
+    ${esc(p.pos)}. ${esc(p.name)}
+
+    ${p.pos<=S.round.winners?`
+     <span class="tag ok">
+      ${esc(S.round.prize)}
+     </span>
+    `:''}
+
+   </span>
+
+   <span>
+    ${esc(p.score)}/${S.fix.length}
+   </span>
+
+  </div>
+
+ `).join(''):`
+
+  <div class="muted">No entries.</div>
+
+ `}
+
+ </div>
+
+ `;
+
+}
+
 boot();
+
 </script>
 </body>
 </html>
