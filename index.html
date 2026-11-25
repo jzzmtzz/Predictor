@@ -58,7 +58,7 @@ const TG=window.Telegram&&Telegram.WebApp;if(TG){TG.ready();TG.expand()}
 const INIT=TG?TG.initData:'';
 const OPT=[['1','Home win'],['X','Draw'],['2','Away win']];
 const S={round:null,fix:[],picks:{},entry:null,lb:[],me:''};
-let err='',agreed=false,busy=false;
+let err='',agreed=localStorage.getItem('ageConsentPL')==='true',busy=false;
 const app=document.querySelector('#app');
 const fmt=t=>new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Lisbon',weekday:'short',hour:'2-digit',minute:'2-digit'}).format(t);
 const lock=()=>Math.min(...S.fix.map(f=>f.ko));
@@ -79,13 +79,18 @@ async function boot(){
  render()}
 function render(){
  if(!S.round)return shell('No round is open yet. Check back soon.');
- (S.entry||agreed)?round():gate()}
+ round();
+}
 function gate(){
  app.innerHTML=`<h1>${S.round.title}</h1><p class="muted">Predict ${S.fix.length} matches. Top ${S.round.winners} scores win ${S.round.prize.toLowerCase()}.</p>
  <div class="panel"><label><input type="checkbox" id="c"><span>I am 18 or older, located in Portugal, and accept the terms and privacy notice.</span></label>
  <button class="full" id="go" disabled>Start predicting</button></div><p class="muted">Free to play. No deposits, no cash-out.</p>`;
  const c=document.querySelector('#c'),g=document.querySelector('#go');
- c.onchange=()=>g.disabled=!c.checked;g.onclick=()=>{agreed=true;render()}}
+ c.onchange=()=>g.disabled=!c.checked;g.onclick=()=>{
+  localStorage.setItem('ageConsentPL','true');
+  agreed=true;
+  render()
+}}
 function round(){
  const done=!!S.entry,n=S.fix.filter(f=>S.picks[f.id]).length,tot=S.fix.length,can=!done&&open();
  const cards=S.fix.map(f=>`<div class="panel"><div class="muted">${f.league||''}</div><div class="row" style="margin-top:4px"><div><b>${f.home}</b><br><b>${f.away}</b></div><span class="tag">${fmt(f.ko)}</span></div>
