@@ -7,6 +7,7 @@
 <title>Match Predictor</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&display=swap">
+
 <style>
 :root{--bg:#F2F5F0;--surf:#fff;--ink:#0E1B2C;--mute:#5B6B7B;--line:#D9E0D8;--turf:#1F7A4D;--turf-ink:#fff;--card:#F5C518;--card-ink:#0E1B2C;--bad:#B3261E;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
@@ -46,8 +47,59 @@ button:focus-visible{outline:3px solid var(--card);outline-offset:2px}
 .err{color:var(--bad);font-size:14px;margin-top:6px}
 .dev{margin-top:26px;border:1px dashed var(--line);border-radius:14px;padding:12px}
 a{color:var(--turf)}
+
+.welcome{
+ min-height:75vh;
+ display:flex;
+ flex-direction:column;
+ justify-content:center;
+}
+
+.welcome-icon{
+ font-size:48px;
+ margin-bottom:12px;
+ text-align:center;
+}
+
+.welcome h1{
+ text-align:center;
+ margin-bottom:8px;
+}
+
+.welcome-intro{
+ text-align:center;
+ margin-bottom:22px;
+ color:var(--mute);
+}
+
+.consent-label{
+ display:flex;
+ align-items:flex-start;
+ gap:10px;
+ font-size:14px;
+ cursor:pointer;
+ margin:16px 0;
+}
+
+.consent-label input{
+ width:20px;
+ height:20px;
+ flex-shrink:0;
+ margin:2px 0 0;
+ accent-color:var(--turf);
+}
+
+.rules{
+ font-size:14px;
+ color:var(--mute);
+}
+
+.rules p{
+ margin:8px 0;
+}
 </style>
 </head>
+
 <body>
 
 <div id="app"></div>
@@ -77,7 +129,8 @@ const S={
  picks:{},
  entry:null,
  lb:[],
- me:''
+ me:'',
+ consent:false
 };
 
 let err='',busy=false;
@@ -170,6 +223,10 @@ async function load(){
    ?S.picks
    :{};
 
+ if(previousRound&&previousRound!==S.round?.id){
+  S.consent=false;
+ }
+
  return true;
 }
 
@@ -196,7 +253,108 @@ async function boot(){
   return;
  }
 
+ err='';
+
  render();
+}
+
+function welcome(){
+
+ const tot=S.fix.length;
+
+ app.innerHTML=`
+
+ <div class="welcome">
+
+  <div class="welcome-icon">⚽</div>
+
+  <h1>Match Predictor</h1>
+
+  <div class="welcome-intro">
+   Predict the matches and compete for prizes!
+  </div>
+
+  <div class="prize">
+
+   <b>
+    Top ${esc(S.round.winners)} win
+    ${esc(S.round.prize.toLowerCase())}
+   </b>
+
+   <div>
+    Make your predictions and climb the leaderboard.
+   </div>
+
+  </div>
+
+  <div class="panel">
+
+   <b>How to play</b>
+
+   <div class="rules">
+
+    <p>1. Predict the results of ${tot} football matches.</p>
+
+    <p>2. Choose home win (1), draw (X), or away win (2).</p>
+
+    <p>3. Earn one point for every correct prediction.</p>
+
+    <p>4. The highest scores win. Ties go to the earlier entry.</p>
+
+    <p>Odds are for reference only and do not affect scoring.</p>
+
+    <p>Predictions cannot be changed after submission.</p>
+
+   </div>
+
+   <label class="consent-label">
+
+    <input type="checkbox" id="accept">
+
+    <span>
+     I confirm that I am 18 years of age or older
+     and agree to the participation rules above.
+    </span>
+
+   </label>
+
+   <button
+    class="full"
+    id="continue"
+    disabled>
+
+    Start predicting
+
+   </button>
+
+   <div class="err">${esc(err)}</div>
+
+  </div>
+
+ </div>
+
+ `;
+
+ const checkbox=document.querySelector('#accept');
+ const next=document.querySelector('#continue');
+
+ checkbox.onchange=()=>{
+  next.disabled=!checkbox.checked;
+ };
+
+ next.onclick=()=>{
+
+  if(!checkbox.checked)return;
+
+  S.consent=true;
+  err='';
+
+  render();
+
+  window.scrollTo(0,0);
+
+ };
+
 }
 
 function render(){
@@ -207,6 +365,10 @@ function render(){
 
  if(!S.fix.length){
   return shell('No matches available yet.');
+ }
+
+ if(!S.entry&&open()&&!S.consent){
+  return welcome();
  }
 
  round();
@@ -387,13 +549,19 @@ function round(){
 
    if(S.fix.some(f=>!S.picks[f.id]))return;
 
+   if(!S.consent){
+    err='Please accept the participation rules first.';
+    return welcome();
+   }
+
    busy=true;
 
    round();
 
    const j=await call('submit',{
     round_id:S.round.id,
-    picks:S.picks
+    picks:S.picks,
+    consent:S.consent
    });
 
    busy=false;
